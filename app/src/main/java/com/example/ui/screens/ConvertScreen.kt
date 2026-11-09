@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -11,7 +10,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,26 +20,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +52,7 @@ import com.example.model.CurrencyItem
 import com.example.model.SupportedCurrencies
 import com.example.ui.components.CalculatorSheet
 import com.example.ui.components.CountryFlag
+import com.example.ui.components.CurrencyGestureList
 import com.example.ui.theme.AppTheme
 import com.example.viewmodel.MainViewModel
 
@@ -66,12 +63,12 @@ fun ConvertScreen(
     modifier: Modifier = Modifier
 ) {
     val colors = AppTheme.colors
+    var isEditMode by rememberSaveable { mutableStateOf(false) }
     val selectedCodes by viewModel.selectedCurrencies.collectAsState()
     val baseCode by viewModel.baseCurrency.collectAsState()
     val baseAmount by viewModel.baseAmount.collectAsState()
     val ratesState by viewModel.ratesState.collectAsState()
     val calculatorCurrency by viewModel.calculatorCurrency.collectAsState()
-    val isEditMode by viewModel.isEditMode.collectAsState()
 
     // Read conversion inputs as Compose state so cached list rows refresh with every amount change.
     val convertedAmounts = remember(selectedCodes, baseCode, baseAmount, ratesState) {
@@ -120,8 +117,8 @@ fun ConvertScreen(
                     )
                 }
 
-                // Right Actions: Refresh and Edit
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Refresh exchange rates
                     IconButton(
                         onClick = { viewModel.refreshRates() },
                         enabled = !ratesState.isLoading,
@@ -136,19 +133,20 @@ fun ConvertScreen(
                                 .rotate(if (ratesState.isLoading) spinAngle else 0f)
                         )
                     }
-
-                    TextButton(
-                        onClick = { viewModel.toggleEditMode() },
+                    IconToggleButton(
+                        checked = isEditMode,
+                        onCheckedChange = { isEditMode = it },
                         modifier = Modifier.testTag("edit_mode_button")
                     ) {
-                        Text(
-                            text = if (isEditMode) "Done" else "Edit",
-                            color = colors.accentGreen,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Medium
+                        Icon(
+                            imageVector = Icons.Default.DragHandle,
+                            contentDescription = if (isEditMode) "Finish editing currencies" else "Edit currencies",
+                            tint = if (isEditMode) colors.accentGreen else colors.textSecondary,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
+
             }
 
             // Big Bold Screen Title "Currency"
@@ -196,45 +194,23 @@ fun ConvertScreen(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Currency List
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .testTag("currency_list"),
-                contentPadding = PaddingValues(bottom = 24.dp)
-            ) {
-                val currencies = selectedCodes.mapNotNull { SupportedCurrencies.MAP[it] }
-
-                itemsIndexed(currencies, key = { _, item -> item.code }) { index, item ->
-                    val isBase = item.code == baseCode
-                    val convertedAmount = convertedAmounts.getValue(item.code)
-                    val formattedPillText = viewModel.formatFormattedWithSymbol(item, convertedAmount)
-
-                    CurrencyRow(
-                        item = item,
-                        isBase = isBase,
-                        formattedAmount = formattedPillText,
-                        isEditMode = isEditMode,
-                        canMoveUp = index > 0,
-                        canMoveDown = index < currencies.size - 1,
-                        canDelete = currencies.size > 1,
-                        onRowClick = {
-                            if (!isEditMode) {
-                                viewModel.openCalculator(item)
-                            }
-                        },
-                        onMoveUp = { viewModel.moveCurrencyUp(index) },
-                        onMoveDown = { viewModel.moveCurrencyDown(index) },
-                        onDelete = { viewModel.toggleCurrencySelection(item.code) }
-                    )
-
-                    HorizontalDivider(
-                        color = colors.divider,
-                        thickness = 0.5.dp,
-                        modifier = Modifier.padding(start = 76.dp)
-                    )
-                }
+            CurrencyGestureList(
+                currencies = selectedCodes.mapNotNull { SupportedCurrencies.MAP[it] },
+                isEditMode = isEditMode,
+                onMove = viewModel::moveCurrency,
+                onDelete = viewModel::removeCurrency,
+                modifier = Modifier.weight(1f)
+            ) { item, dragHandle ->
+                CurrencyRow(
+                    item = item,
+                    isBase = item.code == baseCode,
+                    isEditMode = isEditMode,
+                    formattedAmount = viewModel.formatFormattedWithSymbol(
+                        item, convertedAmounts.getValue(item.code)
+                    ),
+                    onRowClick = { viewModel.openCalculator(item) },
+                    dragHandle = dragHandle
+                )
             }
         }
 
@@ -258,15 +234,10 @@ fun ConvertScreen(
 private fun CurrencyRow(
     item: CurrencyItem,
     isBase: Boolean,
-    formattedAmount: String,
     isEditMode: Boolean,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
-    canDelete: Boolean,
+    formattedAmount: String,
     onRowClick: () -> Unit,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
-    onDelete: () -> Unit
+    dragHandle: @Composable () -> Unit
 ) {
     val colors = AppTheme.colors
     val rowBackground = if (isBase) colors.baseRowHighlight else Color.Transparent
@@ -275,7 +246,7 @@ private fun CurrencyRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(rowBackground)
-            .clickable(onClick = onRowClick)
+            .clickable(enabled = !isEditMode, onClick = onRowClick)
             .padding(horizontal = 20.dp, vertical = 14.dp)
             .testTag("currency_row_${item.code}"),
         verticalAlignment = Alignment.CenterVertically
@@ -313,67 +284,23 @@ private fun CurrencyRow(
 
         Spacer(modifier = Modifier.width(10.dp))
 
-        if (isEditMode) {
-            // Reorder & Remove Actions in Edit mode
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = onMoveUp,
-                    enabled = canMoveUp,
-                    modifier = Modifier.size(36.dp).testTag("move_up_${item.code}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowUpward,
-                        contentDescription = "Move Up",
-                        tint = if (canMoveUp) colors.textSecondary else colors.cardBorder,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+        val pillBg = if (isBase) colors.basePillBg else colors.normalPillBg
+        val pillTextColor = if (isBase) colors.basePillText else colors.normalPillText
 
-                IconButton(
-                    onClick = onMoveDown,
-                    enabled = canMoveDown,
-                    modifier = Modifier.size(36.dp).testTag("move_down_${item.code}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowDownward,
-                        contentDescription = "Move Down",
-                        tint = if (canMoveDown) colors.textSecondary else colors.cardBorder,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                if (canDelete) {
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(36.dp).testTag("delete_${item.code}")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = Color(0xFFFF453A),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
-        } else {
-            val pillBg = if (isBase) colors.basePillBg else colors.normalPillBg
-            val pillTextColor = if (isBase) colors.basePillText else colors.normalPillText
-
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = pillBg,
-                modifier = Modifier
-                    .testTag("amount_pill_${item.code}")
-            ) {
-                Text(
-                    text = formattedAmount,
-                    color = pillTextColor,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
-                )
-            }
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = pillBg,
+            modifier = Modifier
+                .testTag("amount_pill_${item.code}")
+        ) {
+            Text(
+                text = formattedAmount,
+                color = pillTextColor,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+            )
         }
+        dragHandle()
     }
 }

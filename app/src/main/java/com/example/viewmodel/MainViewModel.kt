@@ -8,10 +8,8 @@ import com.example.data.ExchangeRatesState
 import com.example.model.CurrencyItem
 import com.example.model.SupportedCurrencies
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
@@ -30,9 +28,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _calculatorCurrency = MutableStateFlow<CurrencyItem?>(null)
     val calculatorCurrency: StateFlow<CurrencyItem?> = _calculatorCurrency.asStateFlow()
-
-    private val _isEditMode = MutableStateFlow(false)
-    val isEditMode: StateFlow<Boolean> = _isEditMode.asStateFlow()
 
     init {
         // Initial check and fetch if needed
@@ -82,14 +77,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.setBaseAmount(newAmount)
     }
 
-    fun toggleEditMode() {
-        _isEditMode.value = !_isEditMode.value
-    }
-
-    fun setEditMode(active: Boolean) {
-        _isEditMode.value = active
-    }
-
     fun toggleCurrencySelection(code: String) {
         val current = selectedCurrencies.value.toMutableList()
         if (current.contains(code)) {
@@ -107,22 +94,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.saveSelectedCurrencies(current)
     }
 
-    fun moveCurrencyUp(index: Int) {
-        val current = selectedCurrencies.value.toMutableList()
-        if (index > 0 && index < current.size) {
-            val item = current.removeAt(index)
-            current.add(index - 1, item)
-            repository.saveSelectedCurrencies(current)
+    fun removeCurrency(code: String) {
+        // A repeated gesture callback must never add a deleted currency back.
+        if (code in selectedCurrencies.value && selectedCurrencies.value.size > 1) {
+            toggleCurrencySelection(code)
         }
     }
 
-    fun moveCurrencyDown(index: Int) {
+    fun moveCurrency(code: String, toIndex: Int) {
         val current = selectedCurrencies.value.toMutableList()
-        if (index >= 0 && index < current.size - 1) {
-            val item = current.removeAt(index)
-            current.add(index + 1, item)
-            repository.saveSelectedCurrencies(current)
-        }
+        val fromIndex = current.indexOf(code)
+        if (fromIndex < 0 || toIndex !in current.indices || fromIndex == toIndex) return
+        current.add(toIndex, current.removeAt(fromIndex))
+        repository.saveSelectedCurrencies(current)
     }
 
     fun resetCurrenciesToDefault() {
