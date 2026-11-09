@@ -41,6 +41,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,9 +68,15 @@ fun ConvertScreen(
     val colors = AppTheme.colors
     val selectedCodes by viewModel.selectedCurrencies.collectAsState()
     val baseCode by viewModel.baseCurrency.collectAsState()
+    val baseAmount by viewModel.baseAmount.collectAsState()
     val ratesState by viewModel.ratesState.collectAsState()
     val calculatorCurrency by viewModel.calculatorCurrency.collectAsState()
     val isEditMode by viewModel.isEditMode.collectAsState()
+
+    // Read conversion inputs as Compose state so cached list rows refresh with every amount change.
+    val convertedAmounts = remember(selectedCodes, baseCode, baseAmount, ratesState) {
+        selectedCodes.associateWith { viewModel.getConvertedAmount(it) }
+    }
 
     val infiniteTransition = rememberInfiniteTransition(label = "refresh_spin")
     val spinAngle by infiniteTransition.animateFloat(
@@ -201,7 +208,7 @@ fun ConvertScreen(
 
                 itemsIndexed(currencies, key = { _, item -> item.code }) { index, item ->
                     val isBase = item.code == baseCode
-                    val convertedAmount = viewModel.getConvertedAmount(item.code)
+                    val convertedAmount = convertedAmounts.getValue(item.code)
                     val formattedPillText = viewModel.formatFormattedWithSymbol(item, convertedAmount)
 
                     CurrencyRow(
@@ -235,7 +242,7 @@ fun ConvertScreen(
         calculatorCurrency?.let { curr ->
             CalculatorSheet(
                 currency = curr,
-                initialAmount = viewModel.getConvertedAmount(curr.code),
+                initialAmount = convertedAmounts.getValue(curr.code),
                 onAmountChanged = { newAmount ->
                     viewModel.updateAmountFromCalculator(newAmount)
                 },

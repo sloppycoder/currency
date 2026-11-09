@@ -533,13 +533,16 @@ fun CalculatorSheet(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Done Button
+            // Commit the displayed amount (or pending calculation) before closing.
             Button(
-                onClick = onDismiss,
+                onClick = {
+                    notifyAmount(evaluatePending(calculateCurrentValue()))
+                    onDismiss()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
-                    .testTag("calculator_done_button"),
+                    .testTag("calculator_convert_button"),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = colors.accentGreen,
@@ -553,7 +556,7 @@ fun CalculatorSheet(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Done",
+                    text = "Convert",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold
                 )
