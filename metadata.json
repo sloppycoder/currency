@@ -1,0 +1,6 @@
+{
+  "name": "Currency",
+  "description": "Minimalist currency exchange converter with live rates, calculator, and customizable currency list",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
