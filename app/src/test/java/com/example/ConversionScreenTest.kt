@@ -2,6 +2,7 @@ package com.example
 
 import android.app.Application
 import android.content.Context
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -59,9 +60,11 @@ class ConversionScreenTest {
         assertAmount("USD", "$25.00")
         assertAmount("EUR", "€20.00")
 
-        // Reopening the same currency must keep the submitted amount.
+        // Each opening starts a fresh draft; cancel preserves the submitted amount.
         compose.onNodeWithTag("currency_row_USD").performClick()
-        convert()
+        compose.onNodeWithTag("calculator_amount").assertTextContains("Enter amount")
+        compose.onNodeWithTag("calculator_convert_button").assertIsNotEnabled()
+        compose.onNodeWithTag("calculator_close_button").performClick()
         assertAmount("USD", "$25.00")
         assertAmount("EUR", "€20.00")
     }
@@ -87,6 +90,41 @@ class ConversionScreenTest {
         convert()
         assertAmount("USD", "$30.00")
         assertAmount("EUR", "€24.00")
+    }
+
+    @Test
+    fun draftAndCancelPreserveMainAmountsAndBase() {
+        enterAmount("EUR", "25")
+        compose.onNodeWithTag("keypad_btn_+").performClick()
+        compose.onNodeWithTag("keypad_btn_5").performClick()
+        compose.onNodeWithTag("keypad_btn_=").performClick()
+        compose.runOnIdle {
+            assertEquals("USD", viewModel.baseCurrency.value)
+            assertEquals(1000.0, viewModel.baseAmount.value, 0.0)
+        }
+        compose.onNodeWithTag("calculator_close_button").performClick()
+        assertAmount("USD", "$1,000.00")
+        assertAmount("EUR", "€800.00")
+    }
+
+    @Test
+    fun shortcutsSwitchToOperatorsAndPercentCalculatesWithoutCommitting() {
+        compose.onNodeWithTag("currency_row_USD").performClick()
+        compose.onNodeWithTag("calculator_amount").assertTextContains("Enter amount")
+        compose.onNodeWithTag("keypad_btn_1K").assertExists()
+        compose.onNodeWithTag("keypad_btn_2").performClick()
+        compose.onNodeWithTag("keypad_btn_1K").performClick()
+        compose.onNodeWithTag("keypad_btn_1K").assertDoesNotExist()
+        compose.onNodeWithTag("calculator_amount").assertTextContains("2000")
+        compose.onNodeWithTag("keypad_btn_×").performClick()
+        compose.onNodeWithTag("keypad_btn_1").performClick()
+        compose.onNodeWithTag("keypad_btn_0").performClick()
+        compose.onNodeWithTag("keypad_btn_%").performClick()
+        compose.onNodeWithTag("calculator_amount").assertTextContains("200")
+        compose.runOnIdle { assertEquals(1000.0, viewModel.baseAmount.value, 0.0) }
+        convert()
+        assertAmount("USD", "$200.00")
+        assertAmount("EUR", "€160.00")
     }
 
     @Test

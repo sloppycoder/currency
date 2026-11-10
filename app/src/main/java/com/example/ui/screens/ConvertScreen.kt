@@ -218,9 +218,8 @@ fun ConvertScreen(
         calculatorCurrency?.let { curr ->
             CalculatorSheet(
                 currency = curr,
-                initialAmount = convertedAmounts.getValue(curr.code),
-                onAmountChanged = { newAmount ->
-                    viewModel.updateAmountFromCalculator(newAmount)
+                onConvert = { newAmount ->
+                    viewModel.commitCalculatorAmount(newAmount)
                 },
                 onDismiss = {
                     viewModel.closeCalculator()

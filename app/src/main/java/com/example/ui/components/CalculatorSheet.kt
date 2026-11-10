@@ -2,7 +2,6 @@ package com.example.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,8 +13,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
@@ -32,7 +31,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -48,51 +46,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.CurrencyItem
 import com.example.ui.theme.AppTheme
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalculatorSheet(
     currency: CurrencyItem,
-    initialAmount: Double,
-    onAmountChanged: (Double) -> Unit,
+    onConvert: (Double) -> Unit,
     onDismiss: () -> Unit
 ) {
     val colors = AppTheme.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var inputString by remember {
-        mutableStateOf(
-            if (initialAmount <= 0.0) "0"
-            else if (currency.decimals == 0) initialAmount.toLong().toString()
-            else String.format(Locale.US, "%.2f", initialAmount).trimEnd('0').trimEnd('.')
-        )
-    }
-
-    var formulaDisplay by remember { mutableStateOf("") }
-    var pendingOperator by remember { mutableStateOf<String?>(null) }
-    var firstOperand by remember { mutableDoubleStateOf(0.0) }
-    var shouldClearOnNextDigit by remember { mutableStateOf(false) }
-
-    fun calculateCurrentValue(): Double {
-        val cleaned = inputString.replace(",", "")
-        return cleaned.toDoubleOrNull() ?: 0.0
-    }
-
-    fun notifyAmount(value: Double) {
-        onAmountChanged(if (value < 0) 0.0 else value)
-    }
-
-    fun evaluatePending(secondOperand: Double): Double {
-        val op = pendingOperator ?: return secondOperand
-        return when (op) {
-            "+" -> firstOperand + secondOperand
-            "−" -> firstOperand - secondOperand
-            "×" -> firstOperand * secondOperand
-            "÷" -> if (secondOperand != 0.0) firstOperand / secondOperand else firstOperand
-            else -> secondOperand
-        }
-    }
+    var draft by remember(currency.code) { mutableStateOf(AmountEntryState()) }
+    val shortcuts = remember(currency.code) { amountShortcuts(currency.code) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -105,7 +71,8 @@ fun CalculatorSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp)
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Drag handle pill
@@ -124,10 +91,10 @@ fun CalculatorSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     CountryFlag(currencyCode = currency.code)
                     Spacer(modifier = Modifier.width(10.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = currency.name,
                             color = colors.textPrimary,
@@ -137,7 +104,7 @@ fun CalculatorSheet(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "${currency.code} • Base Currency",
+                            text = currency.code,
                             color = colors.accentGreen,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium
@@ -173,9 +140,9 @@ fun CalculatorSheet(
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     horizontalAlignment = Alignment.End
                 ) {
-                    if (formulaDisplay.isNotEmpty()) {
+                    if (draft.formula.isNotEmpty()) {
                         Text(
-                            text = formulaDisplay,
+                            text = draft.formula,
                             color = colors.textSecondary,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Normal,
@@ -185,349 +152,84 @@ fun CalculatorSheet(
                     }
 
                     Row(
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.End
                     ) {
-                        Text(
-                            text = currency.symbol,
-                            color = colors.accentGreen,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(end = 6.dp)
-                        )
-                        Text(
-                            text = inputString,
-                            color = colors.textPrimary,
-                            fontSize = if (inputString.length > 10) 28.sp else 36.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            textAlign = TextAlign.End
-                        )
-                    }
-                }
-            }
-
-            // Quick High-Denomination Buttons (for VND, IDR, KRW)
-            if (currency.isSmallUnit) {
-                Spacer(modifier = Modifier.height(10.dp))
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val presets = listOf(
-                        "+10K" to 10_000.0,
-                        "+50K" to 50_000.0,
-                        "+100K" to 100_000.0,
-                        "+500K" to 500_000.0,
-                        "+1M" to 1_000_000.0
-                    )
-                    items(presets) { (label, addAmount) ->
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = colors.keypadPresetBg,
-                            modifier = Modifier
-                                .testTag("preset_$label")
-                                .clickable {
-                                    val currentVal = calculateCurrentValue()
-                                    val newVal = currentVal + addAmount
-                                    inputString = if (newVal % 1.0 == 0.0) newVal.toLong().toString() else newVal.toString()
-                                    notifyAmount(newVal)
-                                    shouldClearOnNextDigit = false
-                                }
-                        ) {
+                        if (draft.input.isNotEmpty()) {
                             Text(
-                                text = label,
-                                color = colors.normalPillText,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                                text = currency.symbol,
+                                color = colors.accentGreen,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(end = 6.dp)
                             )
                         }
+                        Text(
+                            text = draft.error ?: draft.input.ifEmpty { "Enter amount" },
+                            color = if (draft.input.isEmpty()) colors.textSecondary else colors.textPrimary,
+                            fontSize = if (draft.error != null || draft.input.isEmpty()) 24.sp
+                                else if (draft.input.length > 10) 28.sp else 36.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.weight(1f, fill = false).testTag("calculator_amount")
+                        )
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Calculator Keypad Grid
-            val numberBg = colors.keypadNumberBg
-            val operatorBg = colors.keypadOperatorBg
-            val accentBg = colors.accentGreen
-
-            // Row 1: C, ±, ⌫, ÷
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 KeypadButton(
-                    text = "C",
-                    bgColor = operatorBg,
-                    textColor = Color(0xFFFF453A),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    inputString = "0"
-                    formulaDisplay = ""
-                    pendingOperator = null
-                    firstOperand = 0.0
-                    shouldClearOnNextDigit = false
-                    notifyAmount(0.0)
-                }
-
+                    text = "C", bgColor = colors.keypadOperatorBg,
+                    textColor = Color(0xFFFF453A), modifier = Modifier.weight(1f)
+                ) { draft = AmountEntryState() }
                 KeypadButton(
-                    text = "±",
-                    bgColor = operatorBg,
-                    textColor = colors.textPrimary,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    val v = calculateCurrentValue()
-                    val inverted = -v
-                    inputString = if (inverted % 1.0 == 0.0) inverted.toLong().toString() else inverted.toString()
-                    notifyAmount(inverted)
-                }
-
+                    text = "%", bgColor = colors.keypadOperatorBg,
+                    textColor = colors.accentGreen, modifier = Modifier.weight(1f)
+                ) { draft = draft.percent() }
                 KeypadButton(
-                    icon = Icons.Default.Backspace,
-                    bgColor = operatorBg,
-                    textColor = colors.textPrimary,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    if (inputString.length > 1) {
-                        inputString = inputString.dropLast(1)
-                    } else {
-                        inputString = "0"
-                    }
-                    notifyAmount(calculateCurrentValue())
-                }
-
+                    icon = Icons.Default.Backspace, bgColor = colors.keypadOperatorBg,
+                    textColor = colors.textPrimary, modifier = Modifier.weight(1f)
+                ) { draft = draft.backspace() }
                 KeypadButton(
-                    text = "÷",
-                    bgColor = if (pendingOperator == "÷") accentBg else operatorBg,
-                    textColor = if (pendingOperator == "÷") colors.basePillText else colors.accentGreen,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    firstOperand = calculateCurrentValue()
-                    pendingOperator = "÷"
-                    formulaDisplay = "$firstOperand ÷"
-                    shouldClearOnNextDigit = true
-                }
+                    text = "=", bgColor = colors.accentGreen,
+                    textColor = colors.basePillText, modifier = Modifier.weight(1f)
+                ) { draft = draft.equals() }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Row 2: 7, 8, 9, ×
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                listOf("7", "8", "9").forEach { digit ->
-                    KeypadButton(
-                        text = digit,
-                        bgColor = numberBg,
-                        textColor = colors.textPrimary,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        appendDigit(
-                            digit = digit,
-                            current = inputString,
-                            shouldClear = shouldClearOnNextDigit,
-                            onUpdate = { newStr ->
-                                inputString = newStr
-                                shouldClearOnNextDigit = false
-                                notifyAmount(calculateCurrentValue())
-                            }
-                        )
-                    }
-                }
-                KeypadButton(
-                    text = "×",
-                    bgColor = if (pendingOperator == "×") accentBg else operatorBg,
-                    textColor = if (pendingOperator == "×") colors.basePillText else colors.accentGreen,
-                    modifier = Modifier.weight(1f)
+            val numberRows = listOf(listOf("7", "8", "9"), listOf("4", "5", "6"),
+                listOf("1", "2", "3"), listOf("0", ".", "00"))
+            val operators = listOf("÷", "×", "−", "+")
+            numberRows.forEachIndexed { index, digits ->
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    firstOperand = calculateCurrentValue()
-                    pendingOperator = "×"
-                    formulaDisplay = "$firstOperand ×"
-                    shouldClearOnNextDigit = true
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Row 3: 4, 5, 6, −
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                listOf("4", "5", "6").forEach { digit ->
+                    digits.forEach { digit ->
+                        KeypadButton(
+                            text = digit, bgColor = colors.keypadNumberBg,
+                            textColor = colors.textPrimary, modifier = Modifier.weight(1f)
+                        ) { draft = draft.digit(digit) }
+                    }
+                    val selected = draft.operatorsVisible && draft.operator == operators[index]
                     KeypadButton(
-                        text = digit,
-                        bgColor = numberBg,
-                        textColor = colors.textPrimary,
+                        text = if (draft.operatorsVisible) operators[index] else shortcuts[index].label,
+                        tag = if (!draft.operatorsVisible && index == 3) "shortcut_btn_1" else null,
+                        bgColor = if (selected) colors.accentGreen else colors.keypadOperatorBg,
+                        textColor = if (selected) colors.basePillText else colors.accentGreen,
                         modifier = Modifier.weight(1f)
                     ) {
-                        appendDigit(
-                            digit = digit,
-                            current = inputString,
-                            shouldClear = shouldClearOnNextDigit,
-                            onUpdate = { newStr ->
-                                inputString = newStr
-                                shouldClearOnNextDigit = false
-                                notifyAmount(calculateCurrentValue())
-                            }
-                        )
+                        draft = if (draft.operatorsVisible) draft.operation(operators[index])
+                            else draft.shortcut(shortcuts[index].multiplier)
                     }
-                }
-                KeypadButton(
-                    text = "−",
-                    bgColor = if (pendingOperator == "−") accentBg else operatorBg,
-                    textColor = if (pendingOperator == "−") colors.basePillText else colors.accentGreen,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    firstOperand = calculateCurrentValue()
-                    pendingOperator = "−"
-                    formulaDisplay = "$firstOperand −"
-                    shouldClearOnNextDigit = true
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Row 4: 1, 2, 3, +
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                listOf("1", "2", "3").forEach { digit ->
-                    KeypadButton(
-                        text = digit,
-                        bgColor = numberBg,
-                        textColor = colors.textPrimary,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        appendDigit(
-                            digit = digit,
-                            current = inputString,
-                            shouldClear = shouldClearOnNextDigit,
-                            onUpdate = { newStr ->
-                                inputString = newStr
-                                shouldClearOnNextDigit = false
-                                notifyAmount(calculateCurrentValue())
-                            }
-                        )
-                    }
-                }
-                KeypadButton(
-                    text = "+",
-                    bgColor = if (pendingOperator == "+") accentBg else operatorBg,
-                    textColor = if (pendingOperator == "+") colors.basePillText else colors.accentGreen,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    firstOperand = calculateCurrentValue()
-                    pendingOperator = "+"
-                    formulaDisplay = "$firstOperand +"
-                    shouldClearOnNextDigit = true
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Row 5: Tailored for small units (K, 100K) or standard (00, .)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                KeypadButton(
-                    text = "0",
-                    bgColor = numberBg,
-                    textColor = colors.textPrimary,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    appendDigit(
-                        digit = "0",
-                        current = inputString,
-                        shouldClear = shouldClearOnNextDigit,
-                        onUpdate = { newStr ->
-                            inputString = newStr
-                            shouldClearOnNextDigit = false
-                            notifyAmount(calculateCurrentValue())
-                        }
-                    )
-                }
-
-                if (currency.isSmallUnit) {
-                    KeypadButton(
-                        text = "K",
-                        bgColor = colors.keypadPresetBg,
-                        textColor = colors.normalPillText,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        val current = calculateCurrentValue()
-                        val newVal = if (current == 0.0) 1000.0 else current * 1000.0
-                        inputString = newVal.toLong().toString()
-                        notifyAmount(newVal)
-                        shouldClearOnNextDigit = false
-                    }
-
-                    KeypadButton(
-                        text = "100K",
-                        bgColor = colors.keypadPresetBg,
-                        textColor = colors.normalPillText,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        val current = calculateCurrentValue()
-                        val newVal = if (current == 0.0) 100000.0 else current * 100000.0
-                        inputString = newVal.toLong().toString()
-                        notifyAmount(newVal)
-                        shouldClearOnNextDigit = false
-                    }
-                } else {
-                    KeypadButton(
-                        text = "00",
-                        bgColor = numberBg,
-                        textColor = colors.textPrimary,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        appendDigit(
-                            digit = "00",
-                            current = inputString,
-                            shouldClear = shouldClearOnNextDigit,
-                            onUpdate = { newStr ->
-                                inputString = newStr
-                                shouldClearOnNextDigit = false
-                                notifyAmount(calculateCurrentValue())
-                            }
-                        )
-                    }
-
-                    KeypadButton(
-                        text = ".",
-                        bgColor = numberBg,
-                        textColor = colors.textPrimary,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        if (shouldClearOnNextDigit) {
-                            inputString = "0."
-                            shouldClearOnNextDigit = false
-                        } else if (!inputString.contains(".")) {
-                            inputString = "$inputString."
-                        }
-                    }
-                }
-
-                // "=" button evaluates arithmetic
-                KeypadButton(
-                    text = "=",
-                    bgColor = Color(0xFF007AFF),
-                    textColor = Color.White,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    val second = calculateCurrentValue()
-                    val result = evaluatePending(second)
-                    formulaDisplay = if (pendingOperator != null) "$firstOperand $pendingOperator $second =" else ""
-                    inputString = if (result % 1.0 == 0.0) result.toLong().toString() else String.format(Locale.US, "%.2f", result).trimEnd('0').trimEnd('.')
-                    pendingOperator = null
-                    shouldClearOnNextDigit = true
-                    notifyAmount(result)
                 }
             }
 
@@ -536,9 +238,11 @@ fun CalculatorSheet(
             // Commit the displayed amount (or pending calculation) before closing.
             Button(
                 onClick = {
-                    notifyAmount(evaluatePending(calculateCurrentValue()))
-                    onDismiss()
+                    val evaluated = draft.equals()
+                    draft = evaluated
+                    if (evaluated.canConvert) onConvert(evaluated.value.coerceAtLeast(0.0))
                 },
+                enabled = draft.canConvert,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
@@ -565,25 +269,11 @@ fun CalculatorSheet(
     }
 }
 
-private fun appendDigit(
-    digit: String,
-    current: String,
-    shouldClear: Boolean,
-    onUpdate: (String) -> Unit
-) {
-    if (shouldClear || current == "0") {
-        onUpdate(digit)
-    } else {
-        if (current.length < 14) {
-            onUpdate(current + digit)
-        }
-    }
-}
-
 @Composable
 private fun KeypadButton(
     modifier: Modifier = Modifier,
     text: String? = null,
+    tag: String? = null,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     bgColor: Color,
     textColor: Color,
@@ -595,7 +285,7 @@ private fun KeypadButton(
         modifier = modifier
             .height(54.dp)
             .border(0.5.dp, colors.cardBorder, RoundedCornerShape(14.dp))
-            .testTag("keypad_btn_${text ?: "icon"}"),
+            .testTag(tag ?: "keypad_btn_${text ?: "icon"}"),
         shape = RoundedCornerShape(14.dp),
         color = bgColor
     ) {
@@ -603,7 +293,7 @@ private fun KeypadButton(
             if (icon != null) {
                 Icon(
                     imageVector = icon,
-                    contentDescription = null,
+                    contentDescription = "Backspace",
                     tint = textColor,
                     modifier = Modifier.size(22.dp)
                 )

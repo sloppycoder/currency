@@ -60,12 +60,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openCalculator(currency: CurrencyItem) {
-        // If clicking a currency that isn't base yet, set it as base
-        if (baseCurrency.value != currency.code) {
-            val converted = repository.convert(baseAmount.value, baseCurrency.value, currency.code)
-            repository.setBaseCurrency(currency.code)
-            repository.setBaseAmount(converted)
-        }
         _calculatorCurrency.value = currency
     }
 
@@ -73,8 +67,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _calculatorCurrency.value = null
     }
 
-    fun updateAmountFromCalculator(newAmount: Double) {
+    fun commitCalculatorAmount(newAmount: Double) {
+        val currency = _calculatorCurrency.value ?: return
+        if (!newAmount.isFinite() || newAmount < 0.0) return
+        repository.setBaseCurrency(currency.code)
         repository.setBaseAmount(newAmount)
+        closeCalculator()
     }
 
     fun toggleCurrencySelection(code: String) {
